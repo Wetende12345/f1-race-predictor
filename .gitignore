@@ -1,8 +1,29 @@
+# Python
 __pycache__/
 *.pyc
-data/cache/
-.venv/
+*.pyo
+*.pyd
+.Python
+env/
 venv/
-models/__pycache__/
-streamlit_app/__pycache__/
+.venv/
+ENV/
+
+# Data & Cache
+data/cache/
+data/raw/*.parquet
+*.parquet
+
+# Models (optional - they are big)
+# models/
+
+# Streamlit
+.streamlit/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Development
+.vscode/
+.idea/
