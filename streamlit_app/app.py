@@ -4,6 +4,9 @@ import streamlit as st
 import pandas as pd
 import joblib
 from pathlib import Path
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, accuracy_score
 
 st.set_page_config(page_title="F1 Race Predictor", layout="wide")
 st.title("🏎️ F1 Race Outcome Predictor 2026")
@@ -13,24 +16,61 @@ st.markdown("**Trained on 2024-2025 data • Built step-by-step for mastery**")
 BASE_DIR = Path(__file__).parent.parent
 MODELS_DIR = BASE_DIR / "models"
 DATA_DIR = BASE_DIR / "data" / "processed"
+MODELS_DIR.mkdir(exist_ok=True)
 
-# Load data and models
-@st.cache_data
-def load_data():
-    return pd.read_parquet(DATA_DIR / "f1_ml_ready_2024_2025.parquet")
-
+# Load or train models
 @st.cache_resource
-def load_models():
-    pos_model = joblib.load(MODELS_DIR / "position_model.pkl")
-    points_model = joblib.load(MODELS_DIR / "points_model.pkl")
-    top3_model = joblib.load(MODELS_DIR / "top3_model.pkl")
-    win_model = joblib.load(MODELS_DIR / "winner_model.pkl")
+def load_or_train_models():
+    model_files = ["position_model.pkl", "points_model.pkl", "top3_model.pkl", "winner_model.pkl"]
+    
+    # Check if models exist
+    if all((MODELS_DIR / f).exists() for f in model_files):
+        st.success("✅ Loaded pre-trained models")
+        return [joblib.load(MODELS_DIR / f) for f in model_files]
+    
+    st.warning("⚠️ Training models on first run (this may take 10-30 seconds)...")
+    
+    # Load data
+    df = pd.read_parquet(DATA_DIR / "f1_ml_ready_2024_2025.parquet")
+    
+    feature_cols = ['grid', 'quali_3_race_avg', 'recent_form', 'vs_teammate_pos', 
+                   'track_experience', 'year', 'round_number']
+    
+    X = df[feature_cols].copy()
+    y_pos = df['race_pos']
+    y_points = df['points']
+    y_top3 = (df['race_pos'] <= 3).astype(int)
+    y_win = (df['race_pos'] == 1).astype(int)
+    
+    X_train, _, y_pos_train, _, y_points_train, _, y_top3_train, _, y_win_train, _ = train_test_split(
+        X, y_pos, y_points, y_top3, y_win, test_size=0.2, random_state=42
+    )
+    
+    # Train models
+    pos_model = xgb.XGBRegressor(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42)
+    points_model = xgb.XGBRegressor(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42)
+    top3_model = xgb.XGBClassifier(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42)
+    win_model = xgb.XGBClassifier(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42)
+    
+    pos_model.fit(X_train, y_pos_train)
+    points_model.fit(X_train, y_points_train)
+    top3_model.fit(X_train, y_top3_train)
+    win_model.fit(X_train, y_win_train)
+    
+    # Save models
+    joblib.dump(pos_model, MODELS_DIR / "position_model.pkl")
+    joblib.dump(points_model, MODELS_DIR / "points_model.pkl")
+    joblib.dump(top3_model, MODELS_DIR / "top3_model.pkl")
+    joblib.dump(win_model, MODELS_DIR / "winner_model.pkl")
+    
+    st.success("✅ Models trained and saved!")
     return pos_model, points_model, top3_model, win_model
 
-ml_df = load_data()
-pos_model, points_model, top3_model, win_model = load_models()
+# Load data and models
+ml_df = pd.read_parquet(DATA_DIR / "f1_ml_ready_2024_2025.parquet")
+pos_model, points_model, top3_model, win_model = load_or_train_models()
 
-# Sidebar
+# Rest of the app (same as before)
 st.sidebar.header("🔧 Prediction Settings")
 
 selected_year = st.sidebar.selectbox("Year", sorted(ml_df['year'].unique()), index=1)
@@ -42,7 +82,6 @@ drivers = sorted(ml_df[(ml_df['year'] == selected_year) &
 selected_driver = st.sidebar.selectbox("Driver", drivers)
 
 if st.sidebar.button("🚀 Make Prediction", type="primary"):
-    
     driver_row = ml_df[(ml_df['year'] == selected_year) & 
                        (ml_df['event_name'] == selected_race) & 
                        (ml_df['FullName'] == selected_driver)].iloc[0]
@@ -74,7 +113,6 @@ if st.sidebar.button("🚀 Make Prediction", type="primary"):
     
     st.success(f"**Prediction for {selected_driver} at {selected_race} ({selected_year})**")
 
-# Preview
 st.subheader("📊 Recent Data Preview")
 st.dataframe(ml_df[['FullName', 'event_name', 'grid', 'recent_form', 'race_pos']].head(10), 
              use_container_width=True)
