@@ -1,124 +1,4 @@
 # streamlit_app/app.py
-
-import streamlit as st
-import pandas as pd
-import joblib
-from pathlib import Path
-import xgboost as xgb
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, accuracy_score
-
-st.set_page_config(page_title="F1 Race Predictor", layout="wide")
-st.title("🏎️ F1 Race Outcome Predictor 2026")
-st.markdown("**Trained on 2024-2025 data • Built step-by-step for mastery**")
-
-# Paths
-BASE_DIR = Path(__file__).parent.parent
-MODELS_DIR = BASE_DIR / "models"
-DATA_DIR = BASE_DIR / "data" / "processed"
-MODELS_DIR.mkdir(exist_ok=True)
-
-# Load or train models
-@st.cache_resource
-def load_or_train_models():
-    model_files = ["position_model.pkl", "points_model.pkl", "top3_model.pkl", "winner_model.pkl"]
-    
-    # Check if models exist
-    if all((MODELS_DIR / f).exists() for f in model_files):
-        st.success("✅ Loaded pre-trained models")
-        return [joblib.load(MODELS_DIR / f) for f in model_files]
-    
-    st.warning("⚠️ Training models on first run (this may take 10-30 seconds)...")
-    
-    # Load data
-    df = pd.read_parquet(DATA_DIR / "f1_ml_ready_2024_2025.parquet")
-    
-    feature_cols = ['grid', 'quali_3_race_avg', 'recent_form', 'vs_teammate_pos', 
-                   'track_experience', 'year', 'round_number']
-    
-    X = df[feature_cols].copy()
-    y_pos = df['race_pos']
-    y_points = df['points']
-    y_top3 = (df['race_pos'] <= 3).astype(int)
-    y_win = (df['race_pos'] == 1).astype(int)
-    
-    X_train, _, y_pos_train, _, y_points_train, _, y_top3_train, _, y_win_train, _ = train_test_split(
-        X, y_pos, y_points, y_top3, y_win, test_size=0.2, random_state=42
-    )
-    
-    # Train models
-    pos_model = xgb.XGBRegressor(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42)
-    points_model = xgb.XGBRegressor(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42)
-    top3_model = xgb.XGBClassifier(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42)
-    win_model = xgb.XGBClassifier(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42)
-    
-    pos_model.fit(X_train, y_pos_train)
-    points_model.fit(X_train, y_points_train)
-    top3_model.fit(X_train, y_top3_train)
-    win_model.fit(X_train, y_win_train)
-    
-    # Save models
-    joblib.dump(pos_model, MODELS_DIR / "position_model.pkl")
-    joblib.dump(points_model, MODELS_DIR / "points_model.pkl")
-    joblib.dump(top3_model, MODELS_DIR / "top3_model.pkl")
-    joblib.dump(win_model, MODELS_DIR / "winner_model.pkl")
-    
-    st.success("✅ Models trained and saved!")
-    return pos_model, points_model, top3_model, win_model
-
-# Load data and models
-ml_df = pd.read_parquet(DATA_DIR / "f1_ml_ready_2024_2025.parquet")
-pos_model, points_model, top3_model, win_model = load_or_train_models()
-
-# Rest of the app (same as before)
-st.sidebar.header("🔧 Prediction Settings")
-
-selected_year = st.sidebar.selectbox("Year", sorted(ml_df['year'].unique()), index=1)
-races = sorted(ml_df[ml_df['year'] == selected_year]['event_name'].unique())
-selected_race = st.sidebar.selectbox("Race", races)
-
-drivers = sorted(ml_df[(ml_df['year'] == selected_year) & 
-                      (ml_df['event_name'] == selected_race)]['FullName'].unique())
-selected_driver = st.sidebar.selectbox("Driver", drivers)
-
-if st.sidebar.button("🚀 Make Prediction", type="primary"):
-    driver_row = ml_df[(ml_df['year'] == selected_year) & 
-                       (ml_df['event_name'] == selected_race) & 
-                       (ml_df['FullName'] == selected_driver)].iloc[0]
-    
-    features = pd.DataFrame([{
-        'grid': driver_row['grid'],
-        'quali_3_race_avg': driver_row.get('quali_3_race_avg', driver_row['grid']),
-        'recent_form': driver_row['recent_form'],
-        'vs_teammate_pos': driver_row['vs_teammate_pos'],
-        'track_experience': driver_row['track_experience'],
-        'year': driver_row['year'],
-        'round_number': driver_row['round_number']
-    }])
-    
-    pred_pos = pos_model.predict(features)[0]
-    pred_points = points_model.predict(features)[0]
-    pred_top3_prob = top3_model.predict_proba(features)[0][1]
-    pred_win_prob = win_model.predict_proba(features)[0][1]
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Predicted Position", f"P{int(round(pred_pos))}")
-    with col2:
-        st.metric("Predicted Points", f"{max(0, pred_points):.1f}")
-    with col3:
-        st.metric("Top 3 Probability", f"{pred_top3_prob:.1%}")
-    with col4:
-        st.metric("Win Probability", f"{pred_win_prob:.1%}")
-    
-    st.success(f"**Prediction for {selected_driver} at {selected_race} ({selected_year})**")
-
-st.subheader("📊 Recent Data Preview")
-st.dataframe(ml_df[['FullName', 'event_name', 'grid', 'recent_form', 'race_pos']].head(10), 
-             use_container_width=True)
-
-st.caption("F1 Mastery Project - Built step by step")
-# streamlit_app/app.py
 import streamlit as st
 import pandas as pd
 import joblib
@@ -126,69 +6,79 @@ from pathlib import Path
 import shap
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="F1 Race Predictor", layout="wide")
+# ===================== CONFIG =====================
+st.set_page_config(page_title="F1 Predictor", layout="wide", page_icon="🏎️")
 st.title("🏎️ F1 Race Outcome Predictor 2026")
-st.markdown("**Trained on 2024-2025 • Full MLOps • Live What-If Simulator**")
+st.markdown("**Mastery Project** — Data Engineering + ML Engineering")
 
 BASE_DIR = Path(__file__).parent.parent
 MODELS_DIR = BASE_DIR / "models"
 DATA_DIR = BASE_DIR / "data" / "processed"
 
-ml_df = pd.read_parquet(DATA_DIR / "f1_ml_ready_2024_2025.parquet")
+# ===================== LOAD DATA & MODELS =====================
+@st.cache_data
+def load_data():
+    return pd.read_parquet(DATA_DIR / "f1_ml_ready_2024_2025.parquet")
 
-# Load models (or train if missing)
 @st.cache_resource
 def load_models():
-    return [joblib.load(MODELS_DIR / f) for f in 
-            ["position_model.pkl", "points_model.pkl", "top3_model.pkl", "winner_model.pkl"]]
+    models = {}
+    for name in ["position_model", "points_model", "top3_model", "winner_model"]:
+        models[name] = joblib.load(MODELS_DIR / f"{name}.pkl")
+    return models
 
-pos_model, points_model, top3_model, win_model = load_models()
+ml_df = load_data()
+models = load_models()
 
-# === SIDEBAR ===
-st.sidebar.header("🔧 What-If Simulator")
-year = st.sidebar.selectbox("Year", sorted(ml_df['year'].unique()), index=1)
-race = st.sidebar.selectbox("Race", sorted(ml_df[ml_df['year']==year]['event_name'].unique()))
-driver = st.sidebar.selectbox("Driver", sorted(ml_df[(ml_df['year']==year) & (ml_df['event_name']==race)]['FullName'].unique()))
+# ===================== MAIN APP =====================
+tab1, tab2, tab3 = st.tabs(["🔮 What-If Simulator", "📊 Model Explainability", "📋 Data Explorer"])
 
-# Base values
-base_row = ml_df[(ml_df['year']==year) & (ml_df['event_name']==race) & (ml_df['FullName']==driver)].iloc[0]
+with tab1:
+    st.header("What-If Scenario Simulator")
+    st.markdown("Change inputs and see how prediction changes in real-time")
 
-grid = st.sidebar.slider("Grid Position", 1, 20, int(base_row['grid']))
-quali_avg = st.sidebar.slider("Quali 3-race Avg", 1.0, 20.0, float(base_row.get('quali_3_race_avg', base_row['grid'])), 0.1)
-recent_form = st.sidebar.slider("Recent Form (points)", 0.0, 26.0, float(base_row['recent_form']), 0.1)
-vs_teammate = st.sidebar.slider("vs Teammate (+1 better, -1 worse)", -1.0, 1.0, float(base_row['vs_teammate_pos']), 0.1)
-track_exp = st.sidebar.slider("Track Experience", 0, 5, int(base_row['track_experience']))
+    col_a, col_b = st.columns(2)
+    with col_a:
+        year = st.selectbox("Year", sorted(ml_df['year'].unique()), index=1)
+        race = st.selectbox("Race", sorted(ml_df[ml_df['year']==year]['event_name'].unique()))
+        driver = st.selectbox("Driver", sorted(ml_df[(ml_df['year']==year) & (ml_df['event_name']==race)]['FullName'].unique()))
+    
+    base = ml_df[(ml_df['year']==year) & (ml_df['event_name']==race) & (ml_df['FullName']==driver)].iloc[0]
 
-# Predict button
-if st.sidebar.button("🚀 Run What-If Prediction", type="primary"):
-    input_df = pd.DataFrame([{
-        'grid': grid,
-        'quali_3_race_avg': quali_avg,
-        'recent_form': recent_form,
-        'vs_teammate_pos': vs_teammate,
-        'track_experience': track_exp,
-        'year': year,
-        'round_number': base_row['round_number']
-    }])
+    with col_b:
+        grid = st.slider("Grid Position", 1, 20, int(base['grid']))
+        recent_form = st.slider("Recent Form (avg points)", 0.0, 26.0, float(base['recent_form']), 0.1)
+        vs_teammate = st.slider("vs Teammate", -1.0, 1.0, float(base['vs_teammate_pos']), 0.1)
+        track_exp = st.slider("Track Experience", 0, 10, int(base['track_experience']))
 
-    pred_pos = pos_model.predict(input_df)[0]
-    pred_points = points_model.predict(input_df)[0]
-    top3_prob = top3_model.predict_proba(input_df)[0][1]
-    win_prob = win_model.predict_proba(input_df)[0][1]
+    if st.button("Run Prediction", type="primary"):
+        input_data = pd.DataFrame([{
+            'grid': grid,
+            'quali_3_race_avg': base.get('quali_3_race_avg', grid),
+            'recent_form': recent_form,
+            'vs_teammate_pos': vs_teammate,
+            'track_experience': track_exp,
+            'year': year,
+            'round_number': base['round_number']
+        }])
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1: st.metric("Predicted Position", f"P{int(round(pred_pos))}")
-    with col2: st.metric("Predicted Points", f"{max(0, pred_points):.1f}")
-    with col3: st.metric("Top 3 Probability", f"{top3_prob:.1%}")
-    with col4: st.metric("Win Probability", f"{win_prob:.1%}")
+        pred_pos = models['position_model'].predict(input_data)[0]
+        pred_points = models['points_model'].predict(input_data)[0]
+        top3_prob = models['top3_model'].predict_proba(input_data)[0][1]
+        win_prob = models['winner_model'].predict_proba(input_data)[0][1]
 
-    # SHAP Feature Importance
-    st.subheader("🔍 Feature Importance (SHAP)")
-    explainer = shap.TreeExplainer(pos_model)
-    shap_values = explainer.shap_values(input_df)
-    fig, ax = plt.subplots()
-    shap.summary_plot(shap_values, input_df, plot_type="bar", show=False)
-    st.pyplot(fig)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Predicted Finish", f"P{int(round(pred_pos))}")
+        c2.metric("Expected Points", f"{max(0, pred_points):.1f}")
+        c3.metric("Top 3 Chance", f"{top3_prob:.1%}")
+        c4.metric("Win Chance", f"{win_prob:.1%}")
 
-st.subheader("📊 Recent Data Preview")
-st.dataframe(ml_df[['FullName', 'event_name', 'grid', 'recent_form', 'race_pos']].head(10), use_container_width=True)
+with tab2:
+    st.header("Model Explainability (SHAP)")
+    st.info("This section will show which features influence predictions the most — very important for production ML")
+
+with tab3:
+    st.header("Raw Data Explorer")
+    st.dataframe(ml_df.head(20), use_container_width=True)
+
+st.caption("Built for mastery • Automated with GitHub Actions • Tracked with MLflow")
