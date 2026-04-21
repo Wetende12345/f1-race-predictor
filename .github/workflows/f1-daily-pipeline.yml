@@ -2,8 +2,8 @@ name: F1 Daily Data Pipeline
 
 on:
   schedule:
-    - cron: '0 3 * * *'    # Runs every day at 3 AM UTC
-  workflow_dispatch:        # Allows manual trigger
+    - cron: '0 3 * * *'    # Every day at 3 AM UTC
+  workflow_dispatch:       # Allow manual trigger
 
 jobs:
   update-and-retrain:
@@ -33,13 +33,13 @@ jobs:
       - name: Prepare ML data
         run: uv run src/prepare_ml_data.py
 
-      - name: Train models with MLflow
+      - name: Train & Track models with MLflow
         run: uv run src/train_models.py
 
-      - name: Commit updated data & models
+      - name: Commit any updates
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add data/ models/
-          git commit -m "Automated daily update: $(date)" || echo "No changes"
+          git add data/ models/ || true
+          git commit -m "Automated daily update: $(date)" || echo "No changes to commit"
           git push
