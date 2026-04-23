@@ -1,10 +1,10 @@
 [project]
 name = "f1-race-predictor"
 version = "0.1.0"
-description = "F1 Race Outcome Predictor"
+description = "F1 Race Outcome Predictor with MLOps"
 requires-python = ">=3.11"
 dependencies = [
-    "fastf1",
+    "fastf1>=0.12",
     "pandas",
     "pyarrow",
     "xgboost",
@@ -13,6 +13,7 @@ dependencies = [
     "streamlit",
     "mlflow",
     "shap",
+    "plotly",
 ]
 
 [tool.uv]
@@ -20,3 +21,6 @@ dev-dependencies = [
     "black",
     "ruff",
 ]
+
+[tool.ruff]
+line-length = 100
